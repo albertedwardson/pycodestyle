@@ -196,7 +196,7 @@ def register_check(check: Callable, codes=None) -> Callable:
 # Plugins (check functions) for physical lines
 ########################################################################
 
-CheckResult: TypeAlias = tuple[int, str] | None
+CheckResult: TypeAlias = tuple[int | tuple[int, int], str] | None
 
 # #@register_check
 def tabs_or_spaces(physical_line: str, indent_char: str) -> CheckResult:
@@ -212,12 +212,15 @@ def tabs_or_spaces(physical_line: str, indent_char: str) -> CheckResult:
 
     Okay: if a == 0:\n    a = 1\n    b = 1
     """
+    indent = ''
     if match := INDENT_REGEX.match(physical_line):
         indent = indg if (indg := match.group(1)) else ''
     
     for offset, char in enumerate(indent):
         if char != indent_char:
             return offset, "E101 indentation contains mixed spaces and tabs"
+    
+    return None
 
 
 #@register_check
@@ -227,11 +230,13 @@ def tabs_obsolete(physical_line: str) -> CheckResult:
     Okay: if True:\n    return
     W191: if True:\n\treturn
     """
-
+    indent = ''
     if match := INDENT_REGEX.match(physical_line):
         indent = indg if (indg := match.group(1)) else ''
     if '\t' in indent:
         return indent.index('\t'), "W191 indentation contains tabs"
+    
+    return None
 
 
 #@register_check
@@ -256,6 +261,7 @@ def trailing_whitespace(physical_line: str) -> CheckResult:
             return len(stripped), "W291 trailing whitespace"
         else:
             return 0, "W293 blank line contains whitespace"
+    return None
 
 
 #@register_check
@@ -273,6 +279,7 @@ def trailing_blank_lines(physical_line: str, lines: Sequence[str], line_number: 
             return 0, "W391 blank line at end of file"
         if stripped_last_line == physical_line:
             return len(lines[-1]), "W292 no newline at end of file"
+    return None
 
 
 #@register_check
@@ -294,7 +301,7 @@ def maximum_line_length(physical_line: str, max_line_length: int, multiline: boo
     if length > max_line_length and not noqa:
         # Special case: ignore long shebang lines.
         if line_number == 1 and line.startswith('#!'):
-            return
+            return None
         # Special case for long URLs in multi-line docstrings or
         # comments, but still report the error when the 72 first chars
         # are whitespaces.
@@ -302,17 +309,18 @@ def maximum_line_length(physical_line: str, max_line_length: int, multiline: boo
         if ((len(chunks) == 1 and multiline) or
             (len(chunks) == 2 and chunks[0] == '#')) and \
                 len(line) - len(chunks[-1]) < max_line_length - 7:
-            return
+            return None
         if length > max_line_length:
             return (max_line_length, "E501 line too long "
                     "(%d > %d characters)" % (length, max_line_length))
+    return None
 
 
 ########################################################################
 # Plugins (check functions) for logical lines
 ########################################################################
 
-LogicalCheckResult: TypeAlias = Iterable[CheckResult] | None
+LogicalCheckResult: TypeAlias = Iterable[CheckResult]
 
 def _is_one_liner(logical_line: str, indent_level: int, lines: Sequence[str], line_number: int) -> bool:
     if not STARTSWITH_TOP_LEVEL_REGEX.match(logical_line):
@@ -1047,7 +1055,7 @@ def whitespace_around_named_parameter_equals(logical_line: str, tokens: Sequence
     E251: return magic(r = real, i = imag)
     E252: def complex(real, image: float=0.0):
     """
-    paren_stack = []
+    paren_stack: list[str] = []
     no_space = False
     require_space = False
     prev_end = None
@@ -1064,10 +1072,12 @@ def whitespace_around_named_parameter_equals(logical_line: str, tokens: Sequence
         if no_space:
             no_space = False
             if start != prev_end:
+                assert prev_end
                 yield (prev_end, message)
         if require_space:
             require_space = False
             if start == prev_end:
+                assert prev_end
                 yield (prev_end, missing_message)
         if token_type == tokenize.OP:
             if text in '([':
@@ -1090,10 +1100,12 @@ def whitespace_around_named_parameter_equals(logical_line: str, tokens: Sequence
                 ):
                     require_space = True
                     if start == prev_end:
+                        assert prev_end
                         yield (prev_end, missing_message)
                 else:
                     no_space = True
                     if start != prev_end:
+                        assert prev_end
                         yield (prev_end, message)
             if not paren_stack:
                 annotated_func_arg = False
@@ -1169,7 +1181,7 @@ def imports_on_separate_lines(logical_line: str) -> LogicalCheckResult:
 _STRING_PREFIXES = frozenset(('u', 'U', 'b', 'B', 'r', 'R'))
 
 
-def _is_string_literal(line):
+def _is_string_literal(line: str) -> bool:
     if line:
         first_char = line[0]
         if first_char in _STRING_PREFIXES:
@@ -1439,6 +1451,7 @@ def break_after_binary_operator(logical_line: str, tokens: Sequence[TokenInfo]) 
                 line_break and
                 not unary_context and
                 not _is_binary_operator(token_type, text)):
+            assert prev_start
             yield prev_start, "W504 line break after binary operator"
         prev_start = start
 
@@ -1636,36 +1649,12 @@ def ambiguous_identifier(logical_line: str, tokens: Sequence[TokenInfo]) -> Logi
             if text in idents_to_avoid:
                 yield start, "E743 ambiguous function definition '%s'" % text
         if ident:
+            assert pos
             yield pos, "E741 ambiguous variable name '%s'" % ident
         prev_text = text
         prev_start = start
 
 
-#@register_check
-def python_3000_invalid_escape_sequence(logical_line: str, tokens: Sequence[TokenInfo], noqa: bool) -> LogicalCheckResult:
-    r"""Invalid escape sequences are deprecated in Python 3.6.
-
-    Okay: regex = r'\.png$'
-    W605: regex = '\.png$'
-    """
-    if noqa:
-        return
-
-    # https://docs.python.org/3/reference/lexical_analysis.html#string-and-bytes-literals
-    valid = [
-        '\n',
-        '\\',
-        '\'',
-        '"',
-        'a',
-        'b',
-        'f',
-        'n',
-        'r',
-        't',
-        'v',
-        '0', '1', '2', '3', '4', '5', '6', '7',
-        'x',
 # https://docs.python.org/3/reference/lexical_analysis.html#string-and-bytes-literals
 _PYTHON_3000_VALID_ESC = frozenset([
     '\n',
@@ -1690,7 +1679,9 @@ _PYTHON_3000_VALID_ESC = frozenset([
 
 
 @register_check
-def python_3000_invalid_escape_sequence(logical_line, tokens, noqa):
+
+def python_3000_invalid_escape_sequence(logical_line: str, tokens: Sequence[TokenInfo], noqa: bool) -> LogicalCheckResult:
+
     r"""Invalid escape sequences are deprecated in Python 3.6.
 
     Okay: regex = r'\.png$'
@@ -1699,7 +1690,7 @@ def python_3000_invalid_escape_sequence(logical_line, tokens, noqa):
     if noqa:
         return
 
-    prefixes = []
+    prefixes: list[str] = []
     for token_type, text, start, _, _ in tokens:
         if (
                 token_type == tokenize.STRING or
@@ -1741,7 +1732,7 @@ def python_3000_invalid_escape_sequence(logical_line, tokens, noqa):
 
 ########################################################################
 #@register_check
-def maximum_doc_length(logical_line: str, max_doc_length: int, noqa: bool, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
+def maximum_doc_length(logical_line: str, max_doc_length: int | None, noqa: bool, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Limit all doc lines to a maximum of 72 characters.
 
     For flowing long blocks of text (docstrings or comments), limiting
@@ -1753,7 +1744,7 @@ def maximum_doc_length(logical_line: str, max_doc_length: int, noqa: bool, token
         return
 
     prev_token = None
-    skip_lines = set()
+    skip_lines: set[str] = set()
     # Skip lines that
     for token_type, text, start, end, line in tokens:
         if token_type not in SKIP_COMMENTS.union([tokenize.STRING]):
@@ -1815,7 +1806,7 @@ def noqa(line: str) -> bool:
     return bool(_noqa_pattern.search(line))
 
 
-def expand_indent(line) -> int:
+def expand_indent(line: str) -> int:
     r"""Return the amount of indentation.
 
     Tabs are expanded to the next multiple of 8.
@@ -1846,7 +1837,7 @@ def mute_string(text: str) -> str:
     return text[:start] + 'x' * (end - start) + text[end:]
 
 
-def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str, set[int]]:
+def parse_udiff(diff: str, patterns: Sequence[str] | None=None, parent: str='.') -> dict[str, set[int]]:
     """Return a dictionary of matching lines."""
     # For each file of the diff, the entry key is the filename,
     # and the value is a set of row numbers to consider.
@@ -1878,7 +1869,7 @@ def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str, set[int]
     }
 
 
-def normalize_paths(value, parent=os.curdir):
+def normalize_paths(value: list[str] | str | None, parent: str=os.curdir) -> list[str]:
     """Parse a comma-separated list of paths.
 
     Return a list of absolute paths.
@@ -1887,7 +1878,7 @@ def normalize_paths(value, parent=os.curdir):
         return []
     if isinstance(value, list):
         return value
-    paths = []
+    paths: list[str] = []
     for path in value.split(','):
         path = path.strip()
         if '/' in path:
@@ -1896,7 +1887,7 @@ def normalize_paths(value, parent=os.curdir):
     return paths
 
 
-def filename_match(filename, patterns, default: bool=True) -> bool:
+def filename_match(filename: str, patterns: Sequence[str] | None, default: bool=True) -> bool:
     """Check if patterns contains a pattern that matches filename.
 
     If patterns is unspecified, this always returns True.
@@ -1906,7 +1897,7 @@ def filename_match(filename, patterns, default: bool=True) -> bool:
     return any(fnmatch(filename, pattern) for pattern in patterns)
 
 
-def update_counts(s, counts: dict[str, int]) -> None:
+def update_counts(s: str, counts: dict[str, int]) -> None:
     r"""Adds one to the counts of each appearance of characters in s,
         for characters in counts"""
     for char in s:
