@@ -790,9 +790,9 @@ def whitespace_before_parameters(logical_line: str, tokens: Sequence[TokenInfo])
     E211: dict ['key'] = list[index]
     E211: dict['key'] = list [index]
     """
-    prev_type, prev_text, __, prev_end, __ = tokens[0]
+    prev_type, prev_text, _, prev_end, _ = tokens[0]
     for index in range(1, len(tokens)):
-        token_type, text, start, end, __ = tokens[index]
+        token_type, text, start, end, _ = tokens[index]
         if (
             token_type == tokenize.OP and
             text in '([' and
@@ -1846,11 +1846,11 @@ def mute_string(text: str) -> str:
     return text[:start] + 'x' * (end - start) + text[end:]
 
 
-def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str | None, set[int]]:
+def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str, set[int]]:
     """Return a dictionary of matching lines."""
     # For each file of the diff, the entry key is the filename,
     # and the value is a set of row numbers to consider.
-    rv: dict[str | None, set[int]] = {}
+    rv: dict[str, set[int]] = {}
     path = nrows = None
     for line in diff.splitlines():
         if nrows:
@@ -1862,6 +1862,7 @@ def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str | None, s
             if not hunk_match:
                 continue
             (row, nrows) = (int(g or '1') for g in hunk_match.groups())
+            assert path
             rv[path].update(range(row, row + nrows))
         elif line[:3] == '+++':
             path = line[4:].split('\t', 1)[0]
