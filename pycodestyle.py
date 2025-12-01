@@ -48,7 +48,6 @@ W warnings
 """
 from tokenize import TokenInfo
 from os import PathLike
-from tokenize import TokenInfo
 from types import FunctionType
 import bisect
 import configparser
@@ -60,7 +59,7 @@ import re
 import sys
 import time
 import tokenize
-from typing import Any, Callable
+from typing import Any, Callable, Sequence, TypeAlias, Iterable
 import warnings
 from fnmatch import fnmatch
 from functools import lru_cache
@@ -197,8 +196,10 @@ def register_check(check: Callable, codes=None) -> Callable:
 # Plugins (check functions) for physical lines
 ########################################################################
 
+CheckResult: TypeAlias = tuple[int, str] | None
+
 # #@register_check
-def tabs_or_spaces(physical_line, indent_char):
+def tabs_or_spaces(physical_line: str, indent_char: str) -> CheckResult:
     r"""Never mix tabs and spaces.
 
     The most popular way of indenting Python is with spaces only.  The
@@ -220,7 +221,7 @@ def tabs_or_spaces(physical_line, indent_char):
 
 
 #@register_check
-def tabs_obsolete(physical_line):
+def tabs_obsolete(physical_line: str) -> CheckResult:
     r"""On new projects, spaces-only are strongly recommended over tabs.
 
     Okay: if True:\n    return
@@ -234,7 +235,7 @@ def tabs_obsolete(physical_line):
 
 
 #@register_check
-def trailing_whitespace(physical_line):
+def trailing_whitespace(physical_line: str) -> CheckResult:
     r"""Trailing whitespace is superfluous.
 
     The warning returned varies on whether the line itself is blank,
@@ -258,7 +259,7 @@ def trailing_whitespace(physical_line):
 
 
 #@register_check
-def trailing_blank_lines(physical_line, lines, line_number, total_lines):
+def trailing_blank_lines(physical_line: str, lines: Sequence[str], line_number: int, total_lines: int) -> CheckResult:
     r"""Trailing blank lines are superfluous.
 
     Okay: spam(1)
@@ -275,8 +276,8 @@ def trailing_blank_lines(physical_line, lines, line_number, total_lines):
 
 
 #@register_check
-def maximum_line_length(physical_line, max_line_length, multiline,
-                        line_number, noqa):
+def maximum_line_length(physical_line: str, max_line_length: int, multiline: bool,
+                        line_number: int, noqa: bool) -> CheckResult:
     r"""Limit all lines to a maximum of 79 characters.
 
     There are still many devices around that are limited to 80 character
@@ -311,8 +312,9 @@ def maximum_line_length(physical_line, max_line_length, multiline,
 # Plugins (check functions) for logical lines
 ########################################################################
 
+LogicalCheckResult: TypeAlias = Iterable[CheckResult] | None
 
-def _is_one_liner(logical_line, indent_level, lines, line_number):
+def _is_one_liner(logical_line: str, indent_level: int, lines: Sequence[str], line_number: int) -> bool:
     if not STARTSWITH_TOP_LEVEL_REGEX.match(logical_line):
         return False
 
@@ -348,10 +350,10 @@ def _is_one_liner(logical_line, indent_level, lines, line_number):
 
 
 #@register_check
-def blank_lines(logical_line, blank_lines, indent_level, line_number,
-                blank_before, previous_logical,
-                previous_unindented_logical_line, previous_indent_level,
-                lines):
+def blank_lines(logical_line: str, blank_lines: int, indent_level: int, line_number: int,
+                blank_before: int, previous_logical: str,
+                previous_unindented_logical_line: str, previous_indent_level: int,
+                lines: Sequence[str]) -> LogicalCheckResult:
     r"""Separate top-level function and class definitions with two blank
     lines.
 
@@ -434,7 +436,7 @@ def blank_lines(logical_line, blank_lines, indent_level, line_number,
 
 
 #@register_check
-def extraneous_whitespace(logical_line):
+def extraneous_whitespace(logical_line: str) -> LogicalCheckResult:
     r"""Avoid extraneous whitespace.
 
     Avoid extraneous whitespace in these situations:
@@ -473,7 +475,7 @@ def extraneous_whitespace(logical_line):
 
 
 #@register_check
-def whitespace_around_keywords(logical_line):
+def whitespace_around_keywords(logical_line: str) -> LogicalCheckResult:
     r"""Avoid extraneous whitespace around keywords.
 
     Okay: True and False
@@ -497,7 +499,7 @@ def whitespace_around_keywords(logical_line):
 
 
 #@register_check
-def missing_whitespace_after_keyword(logical_line, tokens):
+def missing_whitespace_after_keyword(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Keywords should be followed by whitespace.
 
     Okay: from foo import (bar, baz)
@@ -520,9 +522,9 @@ def missing_whitespace_after_keyword(logical_line, tokens):
 
 
 #@register_check
-def indentation(logical_line, previous_logical, indent_char,
-                indent_level, previous_indent_level,
-                indent_size):
+def indentation(logical_line: str, previous_logical: str, indent_char: str,
+                indent_level: int, previous_indent_level: int,
+                indent_size: int) -> LogicalCheckResult:
     r"""Use indent_size (PEP8 says 4) spaces per indentation level.
 
     For really old code that you don't want to mess up, you can continue
@@ -562,8 +564,8 @@ def indentation(logical_line, previous_logical, indent_char,
 
 
 #@register_check
-def continued_indentation(logical_line, tokens, indent_level, hang_closing,
-                          indent_char, indent_size, noqa, verbose):
+def continued_indentation(logical_line: str, tokens: Sequence[TokenInfo], indent_level: int, hang_closing: bool,
+                          indent_char: str, indent_size: int, noqa: bool, verbose: bool) -> LogicalCheckResult:
     r"""Continuation lines indentation.
 
     Continuation lines should align wrapped elements either vertically
@@ -773,7 +775,7 @@ def continued_indentation(logical_line, tokens, indent_level, hang_closing,
 
 
 #@register_check
-def whitespace_before_parameters(logical_line, tokens):
+def whitespace_before_parameters(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Avoid extraneous whitespace.
 
     Avoid extraneous whitespace in the following situations:
@@ -813,7 +815,7 @@ def whitespace_before_parameters(logical_line, tokens):
 
 
 #@register_check
-def whitespace_around_operator(logical_line):
+def whitespace_around_operator(logical_line: str) -> LogicalCheckResult:
     r"""Avoid extraneous whitespace around an operator.
 
     Okay: a = 12 + 3
@@ -837,7 +839,7 @@ def whitespace_around_operator(logical_line):
 
 
 #@register_check
-def missing_whitespace(logical_line, tokens):
+def missing_whitespace(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Surround operators with the correct amount of whitespace.
 
     - Always surround these binary operators with a single space on
@@ -1006,7 +1008,7 @@ def missing_whitespace(logical_line, tokens):
 
 
 #@register_check
-def whitespace_around_comma(logical_line):
+def whitespace_around_comma(logical_line: str) -> LogicalCheckResult:
     r"""Avoid extraneous whitespace after a comma or a colon.
 
     Note: these checks are disabled by default
@@ -1025,7 +1027,7 @@ def whitespace_around_comma(logical_line):
 
 
 #@register_check
-def whitespace_around_named_parameter_equals(logical_line, tokens):
+def whitespace_around_named_parameter_equals(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Don't use spaces around the '=' sign in function arguments.
 
     Don't use spaces around the '=' sign when used to indicate a
@@ -1100,7 +1102,7 @@ def whitespace_around_named_parameter_equals(logical_line, tokens):
 
 
 #@register_check
-def whitespace_before_comment(logical_line, tokens):
+def whitespace_before_comment(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     """Separate inline comments by at least two spaces.
 
     An inline comment is a comment on the same line as a statement.
@@ -1145,7 +1147,7 @@ def whitespace_before_comment(logical_line, tokens):
 
 
 #@register_check
-def imports_on_separate_lines(logical_line):
+def imports_on_separate_lines(logical_line: str) -> LogicalCheckResult:
     r"""Place imports on separate lines.
 
     Okay: import os\nimport sys
@@ -1182,7 +1184,7 @@ _ALLOWED_KEYWORDS_IN_IMPORTS = (
 
 @register_check
 def module_imports_on_top_of_file(
-        logical_line, indent_level, checker_state, noqa):
+        logical_line: str, indent_level: int, checker_state: "_CheckerState", noqa: bool) -> LogicalCheckResult:
     r"""Place imports at the top of the file.
 
     Always put imports at the top of the file, just after any module
@@ -1227,7 +1229,7 @@ def module_imports_on_top_of_file(
 
 
 #@register_check
-def compound_statements(logical_line):
+def compound_statements(logical_line: str) -> LogicalCheckResult:
     r"""Compound statements (on the same line) are generally
     discouraged.
 
@@ -1292,7 +1294,7 @@ def compound_statements(logical_line):
 
 
 #@register_check
-def explicit_line_join(logical_line, tokens):
+def explicit_line_join(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Avoid explicit line join between brackets.
 
     The preferred way of wrapping long lines is by using Python's
@@ -1340,7 +1342,7 @@ def explicit_line_join(logical_line, tokens):
 _SYMBOLIC_OPS = frozenset("()[]{},:.;@=%~") | frozenset(("...",))
 
 
-def _is_binary_operator(token_type, text) -> bool:
+def _is_binary_operator(token_type: int | None, text: str | None) -> bool:
     return (
         token_type == tokenize.OP or
         text in {'and', 'or'}
@@ -1348,8 +1350,9 @@ def _is_binary_operator(token_type, text) -> bool:
         text not in _SYMBOLIC_OPS
     )
 
+_BinOpsBreaksContext: TypeAlias =  Iterable[tuple[int, str, int | None, str | None, bool, bool, tuple[int, int]]]
 
-def _break_around_binary_operators(tokens):
+def _break_around_binary_operators(tokens: Sequence[TokenInfo]) -> _BinOpsBreaksContext:
     """Private function to reduce duplication.
 
     This factors out the shared details between
@@ -1376,7 +1379,7 @@ def _break_around_binary_operators(tokens):
 
 
 #@register_check
-def break_before_binary_operator(logical_line, tokens):
+def break_before_binary_operator(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""
     Avoid breaks before binary operators.
 
@@ -1406,7 +1409,7 @@ def break_before_binary_operator(logical_line, tokens):
 
 
 #@register_check
-def break_after_binary_operator(logical_line, tokens):
+def break_after_binary_operator(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""
     Avoid breaks after binary operators.
 
@@ -1441,7 +1444,7 @@ def break_after_binary_operator(logical_line, tokens):
 
 
 #@register_check
-def comparison_to_singleton(logical_line, noqa):
+def comparison_to_singleton(logical_line: str, noqa: bool) -> LogicalCheckResult:
     r"""Comparison to singletons should use "is" or "is not".
 
     Comparisons to singletons like None should always be done
@@ -1478,7 +1481,7 @@ def comparison_to_singleton(logical_line, noqa):
 
 
 #@register_check
-def comparison_negative(logical_line):
+def comparison_negative(logical_line: str) -> LogicalCheckResult:
     r"""Negative comparison should be done using "not in" and "is not".
 
     Okay: if x not in y:\n    pass
@@ -1500,7 +1503,7 @@ def comparison_negative(logical_line):
 
 
 #@register_check
-def comparison_type(logical_line, noqa):
+def comparison_type(logical_line: str, noqa: bool) -> LogicalCheckResult:
     r"""Object type comparisons should `is` / `is not` / `isinstance()`.
 
     Do not compare types directly.
@@ -1522,7 +1525,7 @@ def comparison_type(logical_line, noqa):
 
 
 #@register_check
-def bare_except(logical_line, noqa):
+def bare_except(logical_line: str, noqa: bool) -> LogicalCheckResult:
     r"""When catching exceptions, mention specific exceptions when
     possible.
 
@@ -1539,7 +1542,7 @@ def bare_except(logical_line, noqa):
 
 
 #@register_check
-def ambiguous_identifier(logical_line, tokens):
+def ambiguous_identifier(logical_line: str, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Never use the characters 'l', 'O', or 'I' as variable names.
 
     In some fonts, these characters are indistinguishable from the
@@ -1639,7 +1642,7 @@ def ambiguous_identifier(logical_line, tokens):
 
 
 #@register_check
-def python_3000_invalid_escape_sequence(logical_line, tokens, noqa):
+def python_3000_invalid_escape_sequence(logical_line: str, tokens: Sequence[TokenInfo], noqa: bool) -> LogicalCheckResult:
     r"""Invalid escape sequences are deprecated in Python 3.6.
 
     Okay: regex = r'\.png$'
@@ -1738,7 +1741,7 @@ def python_3000_invalid_escape_sequence(logical_line, tokens, noqa):
 
 ########################################################################
 #@register_check
-def maximum_doc_length(logical_line, max_doc_length, noqa, tokens):
+def maximum_doc_length(logical_line: str, max_doc_length: int, noqa: bool, tokens: Sequence[TokenInfo]) -> LogicalCheckResult:
     r"""Limit all doc lines to a maximum of 72 characters.
 
     For flowing long blocks of text (docstrings or comments), limiting
@@ -1805,8 +1808,11 @@ def stdin_get_value() -> str:
     """Read the value from stdin."""
     return io.TextIOWrapper(sys.stdin.buffer, errors='ignore').read()
 
+_noqa_pattern = re.compile(r'# no(?:qa|pep8)\b', re.I)
 
-noqa = lru_cache(512)(re.compile(r'# no(?:qa|pep8)\b', re.I).search)
+@lru_cache(512)
+def noqa(line: str) -> bool:
+    return bool(_noqa_pattern.search(line))
 
 
 def expand_indent(line) -> int:
@@ -1828,7 +1834,7 @@ def expand_indent(line) -> int:
     return result
 
 
-def mute_string(text):
+def mute_string(text: str) -> str:
     """Replace contents with 'xxx' to prevent syntax matching."""
     # String modifiers (e.g. u or r)
     start = text.index(text[-1]) + 1
@@ -1840,11 +1846,11 @@ def mute_string(text):
     return text[:start] + 'x' * (end - start) + text[end:]
 
 
-def parse_udiff(diff: str, patterns=None, parent: str='.'):
+def parse_udiff(diff: str, patterns=None, parent: str='.') -> dict[str | None, set[int]]:
     """Return a dictionary of matching lines."""
     # For each file of the diff, the entry key is the filename,
     # and the value is a set of row numbers to consider.
-    rv: dict[Any, Any] = {}
+    rv: dict[str | None, set[int]] = {}
     path = nrows = None
     for line in diff.splitlines():
         if nrows:
@@ -1915,6 +1921,7 @@ def _is_eol_token(token: TokenInfo) -> bool:
 # Framework to run all checks
 ########################################################################
 
+_CheckerState: TypeAlias = dict[Any, Any]
 
 class Checker:
     """Load a Python source file, tokenize it, check coding style."""
@@ -1966,8 +1973,8 @@ class Checker:
         self.report = report or options.report
         self.report_error = self.report.error
         self.noqa: bool = False
-        self.indent_char: Any
-        self.tokens: list[Any]
+        self.indent_char: str
+        self.tokens: list[TokenInfo]
         self.blank_before: int
         self.blank_lines: int
 
@@ -2182,7 +2189,7 @@ class Checker:
         if self._ast_checks:
             self.check_ast()
         self.line_number = 0
-        self.indent_char = None
+        self.indent_char = ''
         self.indent_level = self.previous_indent_level = 0
         self.previous_logical = ''
         self.previous_unindented_logical_line = ''
